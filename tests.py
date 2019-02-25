@@ -49,6 +49,30 @@ L_TRANS_VALUES = {
     ]
 }
 
+ENCRYPTION_VALUES = {
+    'in': [
+        "1122334455667700ffeeddccbbaa9988"
+    ],
+    'out': [
+        "7f679d90bebc24305a468d42b9d4edcd"
+    ]
+}
+
+MASTER_KEY = "8899aabbccddeeff0011223344556677fedcba98765432100123456789abcdef"
+
+ROUND_KEYS = [
+    "8899aabbccddeeff0011223344556677",
+    "fedcba98765432100123456789abcdef",
+    "db31485315694343228d6aef8cc78c44",
+    "3d4553d8e9cfec6815ebadc40a9ffd04",
+    "57646468c44a5e28d3e59246f429f1ac",
+    "bd079435165c6432b532e82834da581b",
+    "51e640757e8745de705727265a0098b1",
+    "5a7925017b9fdd3ed72a91a22286f984",
+    "bb44e25378c73123a5f32f73cdb6e517",
+    "72e9dd7416bcf45b755dbaa88e4a4043"
+]
+
 
 def test_random(func, func_inv, name, count=1000):
     for i in range(count):
@@ -67,6 +91,15 @@ def test_values(func, inputs, outputs, name):
     print(name + " passed with given test values!")
 
 
+def test_round_keys():
+    master_key = binascii.unhexlify(MASTER_KEY)
+    round_keys = cipher.get_round_keys(master_key)
+    expected_keys = [binascii.unhexlify(i) for i in ROUND_KEYS]
+    assert round_keys == expected_keys, \
+        "Round keys generator caused error: gave " + str(round_keys)
+    print("Round keys generator passed!")
+
+
 if __name__ == "__main__":
     # testing straight and invert functions on random blocks
     test_random(cipher.s_box, cipher.s_box_inv, "S-box")
@@ -77,3 +110,11 @@ if __name__ == "__main__":
     test_values(cipher.s_box, S_BOX_VALUES['in'], S_BOX_VALUES['out'], "S-box")
     test_values(cipher.r_trans, R_TRANS_VALUES['in'], R_TRANS_VALUES['out'], "R-transition")
     test_values(cipher.l_trans, L_TRANS_VALUES['in'], L_TRANS_VALUES['out'], "L-transition")
+
+    # testing generator of round keys (from official paper)
+    test_round_keys()
+
+    # testing encryption and decryption (from official paper)
+    key = binascii.unhexlify(MASTER_KEY)
+    test_values(lambda block: cipher.encrypt_block(block, key), ENCRYPTION_VALUES['in'], ENCRYPTION_VALUES['out'], "Encryption")
+    test_values(lambda block: cipher.decrypt_block(block, key), ENCRYPTION_VALUES['out'], ENCRYPTION_VALUES['in'], "Decryption")

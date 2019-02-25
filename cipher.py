@@ -1,5 +1,7 @@
 BLOCK_SIZE = 16
 
+BLOCK_SIZE_ERROR = "Invalid size of block"
+
 PI = [
     0xfc, 0xee, 0xdd, 0x11, 0xcf, 0x6e, 0x31, 0x16, 0xfb, 0xc4, 0xfa, 0xda, 0x23, 0xc5, 0x04, 0x4d,
     0xe9, 0x77, 0xf0, 0xdb, 0x93, 0x2e, 0x99, 0xba, 0x17, 0x36, 0xf1, 0xbb, 0x14, 0xcd, 0x5f, 0xc1,
@@ -45,18 +47,18 @@ L_VEC = [
 
 
 def xor_blocks(a, b):
-    assert len(a) == BLOCK_SIZE, "Invalid size of block"
-    assert len(b) == BLOCK_SIZE, "Invalid size of block"
+    assert len(a) == BLOCK_SIZE, BLOCK_SIZE_ERROR
+    assert len(b) == BLOCK_SIZE, BLOCK_SIZE_ERROR
     return bytes([a[i] ^ b[i] for i in range(BLOCK_SIZE)])
 
 
 def s_box(b):
-    assert len(b) == BLOCK_SIZE, "Invalid size of block"
+    assert len(b) == BLOCK_SIZE, BLOCK_SIZE_ERROR
     return bytes([PI[b[i]] for i in range(BLOCK_SIZE)])
 
 
 def s_box_inv(b):
-    assert len(b) == BLOCK_SIZE, "Invalid size of block"
+    assert len(b) == BLOCK_SIZE, BLOCK_SIZE_ERROR
     return bytes([PI_INV[b[i]] for i in range(BLOCK_SIZE)])
 
 
@@ -75,7 +77,7 @@ def gf_mul(a, b):
 
 def r_trans(b):
     b = b[::-1]
-    assert len(b) == BLOCK_SIZE, "Invalid size of block"
+    assert len(b) == BLOCK_SIZE, BLOCK_SIZE_ERROR
     result = [0] * BLOCK_SIZE
     for i in range(BLOCK_SIZE - 1, -1, -1):
         if i > 0:
@@ -86,7 +88,7 @@ def r_trans(b):
 
 def r_trans_inv(b):
     b = b[::-1]
-    assert len(b) == BLOCK_SIZE, "Invalid size of block"
+    assert len(b) == BLOCK_SIZE, BLOCK_SIZE_ERROR
     result = [0] * BLOCK_SIZE
     a0 = b[BLOCK_SIZE - 1]
     for i in range(BLOCK_SIZE):
@@ -98,7 +100,7 @@ def r_trans_inv(b):
 
 
 def l_trans(b):
-    assert len(b) == BLOCK_SIZE, "Invalid size of block"
+    assert len(b) == BLOCK_SIZE, BLOCK_SIZE_ERROR
     result = b
     for i in range(16):
         result = r_trans(result)
@@ -106,7 +108,7 @@ def l_trans(b):
 
 
 def l_trans_inv(b):
-    assert len(b) == BLOCK_SIZE, "Invalid size of block"
+    assert len(b) == BLOCK_SIZE, BLOCK_SIZE_ERROR
     result = b
     for i in range(16):
         result = r_trans_inv(result)
@@ -115,3 +117,54 @@ def l_trans_inv(b):
 
 def f_func(inp, c):
     return l_trans(s_box(xor_blocks(inp, c)))
+
+
+def sp_net(k1, k2, const):
+    f_res = f_func(k1, const)
+    return xor_blocks(k2, f_res), k1
+
+
+def get_next_keys(k1, k2, const_list):
+    assert len(const_list) == 8
+    for i in range(8):
+        k1, k2 = sp_net(k1, k2, const_list[i])
+    return k1, k2
+
+
+def get_round_keys(master_key):
+    assert len(master_key) == BLOCK_SIZE * 2, "Invalid length of master key"
+    key_consts = []
+    for i in range(32):
+        num = b'\x00' * (BLOCK_SIZE - 1) + bytes([i + 1])
+        key_consts.append(l_trans(num))
+
+    round_keys = list()
+    round_keys.append(master_key[:BLOCK_SIZE])
+    round_keys.append(master_key[BLOCK_SIZE:])
+
+    for i in range(4):
+        k1 = round_keys[-2]
+        k2 = round_keys[-1]
+        k1, k2 = get_next_keys(k1, k2, key_consts[8 * i: 8 * (i + 1)])
+        round_keys.append(k1)
+        round_keys.append(k2)
+    assert len(round_keys) == 10, "Unable to generate 10 round keys"
+    return round_keys
+
+
+def encrypt_block(block, key):
+    assert len(block) == BLOCK_SIZE, BLOCK_SIZE_ERROR
+    round_keys = get_round_keys(key)
+    for i in range(9):
+        block = l_trans(s_box(xor_blocks(block, round_keys[i])))
+    block = xor_blocks(block, round_keys[9])
+    return block
+
+
+def decrypt_block(block, key):
+    assert len(block) == BLOCK_SIZE, BLOCK_SIZE_ERROR
+    round_keys = get_round_keys(key)
+    block = xor_blocks(block, round_keys[9])
+    for i in range(8, -1, -1):
+        block = xor_blocks(s_box_inv(l_trans_inv(block)), round_keys[i])
+    return block
